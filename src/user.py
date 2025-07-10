@@ -248,8 +248,16 @@ class BiliUser:
                 watch_medals.append(medal)
                 self.log.log("INFO", f"{medal['anchor_info']['nick_name']} 牌子已满级但未点亮，加入观看队列")
         
-        # 对粉丝牌进行排序，优先观看未点亮的直播间
-        sorted_medals = sorted(watch_medals, key=lambda medal: medal['medal']['is_lighted'])
+        # 对粉丝牌进行排序，优先观看未点亮的直播间，其次是未满20级且未点亮的
+        def sort_key(medal):
+            # 优先级：1.已满20级但未点亮 2.未满20级且未点亮 3.其他
+            if medal['medal']['is_lighted'] == 0:
+                if medal['medal']['level'] >= 20:
+                    return 0  # 最高优先级：已满20级但未点亮
+                return 1  # 第二优先级：未满20级且未点亮
+            return 2  # 最低优先级：已点亮
+            
+        sorted_medals = sorted(watch_medals, key=sort_key)
         
         if not sorted_medals:
             self.log.log("INFO", "没有需要观看的直播间")
