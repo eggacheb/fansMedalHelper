@@ -238,8 +238,32 @@ class BiliUser:
         HEART_MAX = self.config['WATCHINGLIVE']
         self.log.log("INFO", f"每日{HEART_MAX}分钟任务开始")
         n = 0
-        for medal in self.medalsNeedDo:
+        
+        # 获取所有需要观看的牌子，包括未满20级的和20级以上但未点亮的
+        watch_medals = []
+        for medal in self.medals:
+            if medal['medal']['level'] < 20 and medal['medal']['today_feed'] < 1500:
+                watch_medals.append(medal)
+            elif medal['medal']['level'] >= 20 and medal['medal']['is_lighted'] == 0:
+                watch_medals.append(medal)
+                self.log.log("INFO", f"{medal['anchor_info']['nick_name']} 牌子已满级但未点亮，加入观看队列")
+        
+        # 对粉丝牌进行排序，优先观看未点亮的直播间
+        sorted_medals = sorted(watch_medals, key=lambda medal: medal['medal']['is_lighted'])
+        
+        if not sorted_medals:
+            self.log.log("INFO", "没有需要观看的直播间")
+            return
+            
+        self.log.log("INFO", f"共有 {len(sorted_medals)} 个直播间需要观看")
+        
+        for medal in sorted_medals:
             n += 1
+            # 输出当前直播间点亮状态
+            light_status = "未点亮" if medal['medal']['is_lighted'] == 0 else "已点亮"
+            level_status = f"{medal['medal']['level']}级"
+            self.log.log("INFO", f"开始观看 {medal['anchor_info']['nick_name']} 的直播间 ({light_status}, {level_status}) ({n}/{len(sorted_medals)})")
+            
             for heartNum in range(1, HEART_MAX+1):
                 if self.config['STOPWATCHINGTIME']:
                     if int(time.time()) >= self.config['STOPWATCHINGTIME']:
@@ -251,7 +275,7 @@ class BiliUser:
                 if heartNum%5==0:
                     self.log.log(
                         "INFO",
-                        f"{medal['anchor_info']['nick_name']} 第{heartNum}次心跳包已发送（{n}/{len(self.medalsNeedDo)}）",
+                        f"{medal['anchor_info']['nick_name']} 第{heartNum}次心跳包已发送（{n}/{len(sorted_medals)}）",
                     )
                 await asyncio.sleep(60)
         self.log.log("SUCCESS", f"每日{HEART_MAX}分钟任务完成")

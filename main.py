@@ -6,6 +6,7 @@ import warnings
 import asyncio
 import aiohttp
 import itertools
+import datetime
 from src import BiliUser
 
 log_file = os.path.join(os.path.dirname(__file__), "log/fansMedalHelper_{time:YYYY-MM-DD}.log")
@@ -36,6 +37,15 @@ try:
 
         with open("users.yaml", "r", encoding="utf-8") as f:
             users = yaml.load(f, Loader=yaml.FullLoader)
+    
+    # 在读取配置后立即输出MOREPUSH配置信息
+    morepush_list = users.get("MOREPUSH", [])
+    if morepush_list:
+        if isinstance(morepush_list, dict):
+            log.info(f"读取到单个推送配置: {morepush_list['notifier']}")
+        else:
+            log.info(f"读取到{len(morepush_list)}个推送配置: {', '.join([push['notifier'] for push in morepush_list])}")
+    
     if users.get("WRITE_LOG_FILE"):
         logger.add(
             log_file if users["WRITE_LOG_FILE"] == True else users["WRITE_LOG_FILE"],
@@ -68,6 +78,7 @@ try:
         "SIGNINGROUP": users.get("SIGNINGROUP", 2),
         "PROXY": users.get("PROXY"),
         "STOPWATCHINGTIME": None,
+        "AVOID_MIDNIGHT": users.get("AVOID_MIDNIGHT", 0),  # 新增配置，避免在0点执行任务
     }
     stoptime = users.get("STOPWATCHINGTIME", None)
     if stoptime:
@@ -80,6 +91,15 @@ try:
             delay = delay if delay > now else delay + 86400
         config["STOPWATCHINGTIME"] = delay
         log.info(f"本轮任务将在 {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(config['STOPWATCHINGTIME']))} 结束")
+    
+    # 如果启用了避免0点执行功能，检查当前时间是否接近0点
+    if config["AVOID_MIDNIGHT"] == 1:
+        now = datetime.datetime.now()
+        # 如果当前是23:59，设置停止时间为当前时间
+        if now.hour == 23 and now.minute >= 59:
+            import time
+            config["STOPWATCHINGTIME"] = int(time.time())
+            log.info(f"当前时间为 {now.strftime('%H:%M:%S')}，接近0点，设置立即停止任务")
 except Exception as e:
     log.error(f"读取配置文件失败,请检查配置文件格式是否正确: {e}")
     exit(1)
@@ -107,6 +127,17 @@ async def main():
     except Exception as ex:
         messageList.append(f"检查版本失败，{ex}")
         log.warning(f"检查版本失败，{ex}")
+    
+    # 检查是否需要避免在0点执行任务
+    if config["AVOID_MIDNIGHT"] == 1:
+        now = datetime.datetime.now()
+        
+        if now.hour == 23 and now.minute >= 59:
+            log.warning("当前时间为23:59，根据AVOID_MIDNIGHT配置，暂停执行任务，等待下次计划任务")
+            messageList.append("当前时间为23:59，根据AVOID_MIDNIGHT配置，暂停执行任务，等待下次计划任务")
+            await session.close()
+            return messageList
+    
     initTasks = []
     startTasks = []
     catchMsg = []
@@ -136,19 +167,36 @@ async def main():
     if users.get("SENDKEY", ""):
         await push_message(session, users["SENDKEY"], "  \n".join(messageList))
     await session.close()
-    if users.get("MOREPUSH", ""):
+    
+    # 支持多个推送方式
+    morepush_list = users.get("MOREPUSH", [])
+    if morepush_list:
         from onepush import notify
-
-        notifier = users["MOREPUSH"]["notifier"]
-        params = users["MOREPUSH"]["params"]
-        await notify(
-            notifier,
-            title=f"【B站粉丝牌助手推送】",
-            content="  \n".join(messageList),
-            **params,
-            proxy=config.get("PROXY"),
-        )
-        log.info(f"{notifier} 已推送")
+        
+        # 如果MOREPUSH是字典，转换为列表以兼容旧版配置
+        if isinstance(morepush_list, dict):
+            morepush_list = [morepush_list]
+            log.info(f"检测到单个推送配置: {morepush_list[0]['notifier']}")
+        else:
+            log.info(f"检测到{len(morepush_list)}个推送配置: {', '.join([push['notifier'] for push in morepush_list])}")
+            
+        # 遍历所有推送配置
+        for push_config in morepush_list:
+            try:
+                notifier = push_config["notifier"]
+                params = push_config["params"]
+                await notify(
+                    notifier,
+                    title=f"【B站粉丝牌助手推送】",
+                    content="  \n".join(messageList),
+                    **params,
+                    proxy=config.get("PROXY"),
+                )
+                log.info(f"{notifier} 已推送")
+            except Exception as e:
+                log.error(f"推送失败: {e}")
+    
+    return messageList
 
 
 def run(*args, **kwargs):

@@ -27,8 +27,16 @@ STOPWATCHINGTIME: # '00:00:00' 或 86400
 # 'HH:mm:ss' 格式：从现在起下次到这个时间（即24小时内），注意要加引号（单双不限）
 # 秒格式：从现在起到多少秒（如86400为一天）
 
+AVOID_MIDNIGHT: 0
+# 是否避免在0点前后执行任务，避免出现时间戳错误
+# 设置为1时，在23:59会立即停止任务，等待下次计划任务（建议CRON设置为3 0 * * *）
+# 默认为0，不启用此功能
+
 SENDKEY: # Server酱微信推送 可选 获取地址：https://sct.ftqq.com/
-MOREPUSH: # 更多种类的推送 详细配置见文档
+
+MOREPUSH: # 更多种类的推送 详细配置见文档，多个推送配置请用-分隔
+#  - {"notifier": "lark", "params": {"webhook": "https://open.feishu.cn/open-apis/bot/v2/hook/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", "keyword": "", "sign": ""}}
+#  - {"notifier":"wechatworkbot","params":{"markdown":false,"key":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}}
 
 PROXY: # 推送代理地址,如：http://1.2.3.4:5678 支持 http/socks4/socks5 不支持 https 不用代理的不用填
 #########以下为自定义配置#########
